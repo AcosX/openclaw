@@ -344,7 +344,9 @@ async function persistTextTurnTranscript(
         if (!params.embeddedAssistantGapFill) {
           return true;
         }
-        const latest = await readTailAssistantTextFromSessionTranscript(sessionFile);
+        const latest = await readTailAssistantTextFromSessionTranscript(sessionFile, {
+          excludeTranscriptOnlyOpenClawAssistant: true,
+        });
         const normalizedReply = normalizeTranscriptMirrorText(replyText);
         const normalizedLatest = latest?.text ? normalizeTranscriptMirrorText(latest.text) : "";
         return !normalizedLatest || normalizedLatest !== normalizedReply;
@@ -668,6 +670,7 @@ export function runAgentAttempt(params: {
         agentId: params.sessionAgentId,
         trigger: "user",
         sessionFile: params.sessionFile,
+        storePath: params.storePath,
         workspaceDir: params.workspaceDir,
         cwd: params.cwd,
         config: params.cfg,
@@ -707,6 +710,9 @@ export function runAgentAttempt(params: {
         agentAccountId: params.runContext.accountId,
         senderId: params.runContext.senderId,
         senderIsOwner: params.opts.senderIsOwner,
+        userTurnTranscriptRecorder: params.opts.userTurnTranscriptRecorder,
+        suppressNextUserMessagePersistence: params.suppressPromptPersistenceOnRetry === true,
+        onUserMessagePersisted: params.onUserMessagePersisted,
         toolsAllow: params.opts.toolsAllow,
         cleanupBundleMcpOnRunEnd: params.opts.cleanupBundleMcpOnRunEnd,
         cleanupCliLiveSessionOnRunEnd: params.opts.cleanupCliLiveSessionOnRunEnd,
@@ -833,6 +839,7 @@ export function runAgentAttempt(params: {
     deferTerminalLifecycle: params.deferTerminalLifecycle,
     deferTerminalLifecycleEnd: params.deferTerminalLifecycleEnd,
     suppressNextUserMessagePersistence: params.suppressPromptPersistenceOnRetry === true,
+    userTurnTranscriptRecorder: params.opts.userTurnTranscriptRecorder,
     onUserMessagePersisted: params.onUserMessagePersisted,
     onExecutionStarted: (info) => {
       if (info?.lifecycleGeneration) {
