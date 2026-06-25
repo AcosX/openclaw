@@ -37,8 +37,24 @@ import {
   clearPluginOwnedSessionState,
   type PluginHostSessionCleanupStoreParams,
 } from "./plugin-host-cleanup.js";
+import {
+  appendSqliteTranscriptEvent,
+  appendSqliteTranscriptMessage,
+  cleanupSqliteSessionLifecycleArtifacts,
+  listSqliteSessionEntries,
+  loadExactSqliteSessionEntry,
+  loadSqliteSessionEntry,
+  loadSqliteTranscriptEvents,
+  patchSqliteSessionEntry,
+  publishSqliteTranscriptUpdate,
+  readSqliteSessionUpdatedAt,
+  replaceSqliteSessionEntry,
+  updateSqliteSessionEntry,
+  upsertSqliteSessionEntry,
+} from "./session-accessor.sqlite.js";
 import { resolveAndPersistSessionFile } from "./session-file.js";
 import { resolveSessionStorePathForScope } from "./session-store-path.js";
+import { normalizeStoreSessionKey } from "./store-entry.js";
 import type {
   ResolvedSessionMaintenanceConfig,
   SessionMaintenanceWarning,
@@ -911,15 +927,7 @@ export async function updateResolvedSessionEntry<T>(
 
 /** Returns the entry for a canonical or alias session key, if one exists. */
 export function loadSessionEntry(scope: SessionAccessScope): SessionEntry | undefined {
-  if (scope.clone === false || scope.readConsistency === "latest") {
-    const store = loadSessionStore(resolveSessionStorePathForScope(scope), {
-      ...(scope.clone === false ? { clone: false } : {}),
-      ...(scope.readConsistency === "latest" ? { skipCache: true } : {}),
-      ...(scope.hydrateSkillPromptRefs === false ? { hydrateSkillPromptRefs: false } : {}),
-    });
-    return resolveSessionStoreEntry({ store, sessionKey: scope.sessionKey }).existing;
-  }
-  return getSessionEntry(scope);
+  return loadSqliteSessionEntry(scope);
 }
 
 /**
@@ -928,41 +936,17 @@ export function loadSessionEntry(scope: SessionAccessScope): SessionEntry | unde
  * could cross an account or agent boundary.
  */
 export function loadExactSessionEntry(scope: SessionAccessScope): ExactSessionEntry | undefined {
-  const sessionKey = scope.sessionKey.trim();
-  if (!sessionKey) {
-    return undefined;
-  }
-  const store = loadSessionStore(resolveAccessStorePath(scope), {
-    ...(scope.clone === false ? { clone: false } : {}),
-    ...(scope.readConsistency === "latest" ? { skipCache: true } : {}),
-    ...(scope.hydrateSkillPromptRefs === false ? { hydrateSkillPromptRefs: false } : {}),
-  });
-  const entry = Object.hasOwn(store, sessionKey) ? store[sessionKey] : undefined;
-  return entry ? { sessionKey, entry } : undefined;
+  return loadExactSqliteSessionEntry(scope);
 }
 
 /** Lists entries from the resolved store, preserving the persisted key for each row. */
 export function listSessionEntries(scope: SessionEntryListScope = {}): SessionEntrySummary[] {
-  if (scope.clone === false) {
-    return Object.entries(
-      loadSessionStore(resolveSessionStorePathForScope({ ...scope, sessionKey: "" }), {
-        clone: false,
-        ...(scope.hydrateSkillPromptRefs === false ? { hydrateSkillPromptRefs: false } : {}),
-      }),
-    ).map(([sessionKey, entry]) => ({ sessionKey, entry }));
-  }
-  return listFileSessionEntries(scope);
+  return listSqliteSessionEntries(scope);
 }
 
 /** Reads the last activity timestamp for one session entry, or undefined when absent. */
 export function readSessionUpdatedAt(scope: SessionAccessScope): number | undefined {
-  if (scope.storePath) {
-    return readFileSessionUpdatedAt({
-      storePath: scope.storePath,
-      sessionKey: scope.sessionKey,
-    });
-  }
-  return loadSessionEntry(scope)?.updatedAt;
+  return readSqliteSessionUpdatedAt(scope);
 }
 
 /** Creates or updates one entry from a partial patch and returns the persisted entry. */
@@ -970,11 +954,7 @@ export async function upsertSessionEntry(
   scope: SessionAccessScope,
   patch: Partial<SessionEntry>,
 ): Promise<SessionEntry | null> {
-  return await patchFileSessionEntry({
-    ...scope,
-    fallbackEntry: createFallbackSessionEntry(patch),
-    update: () => patch,
-  });
+  return await upsertSqliteSessionEntry(scope, patch);
 }
 
 /** Replaces one entry with the supplied value and returns the persisted entry. */
@@ -982,12 +962,7 @@ export async function replaceSessionEntry(
   scope: SessionAccessScope,
   entry: SessionEntry,
 ): Promise<SessionEntry | null> {
-  return await patchFileSessionEntry({
-    ...scope,
-    fallbackEntry: entry,
-    replaceEntry: true,
-    update: () => entry,
-  });
+  return await replaceSqliteSessionEntry(scope, entry);
 }
 
 /**
@@ -1003,17 +978,7 @@ export async function patchSessionEntry(
   ) => Promise<Partial<SessionEntry> | null> | Partial<SessionEntry> | null,
   options: SessionEntryPatchOptions = {},
 ): Promise<SessionEntry | null> {
-  return await patchFileSessionEntry({
-    ...scope,
-    fallbackEntry: options.fallbackEntry,
-    maintenanceConfig: options.maintenanceConfig,
-    preserveActivity: options.preserveActivity,
-    requireWriteSuccess: options.requireWriteSuccess,
-    replaceEntry: options.replaceEntry,
-    skipMaintenance: options.skipMaintenance,
-    takeCacheOwnership: options.takeCacheOwnership,
-    update,
-  });
+  return await patchSqliteSessionEntry(scope, update, options);
 }
 
 /**
@@ -1028,17 +993,8 @@ export async function patchSessionEntryWithKey(
   ) => Promise<Partial<SessionEntry> | null> | Partial<SessionEntry> | null,
   options: SessionEntryPatchOptions = {},
 ): Promise<SessionEntryPatchResult | null> {
-  return await patchFileSessionEntryWithKey({
-    ...scope,
-    fallbackEntry: options.fallbackEntry,
-    maintenanceConfig: options.maintenanceConfig,
-    preserveActivity: options.preserveActivity,
-    requireWriteSuccess: options.requireWriteSuccess,
-    replaceEntry: options.replaceEntry,
-    skipMaintenance: options.skipMaintenance,
-    takeCacheOwnership: options.takeCacheOwnership,
-    update,
-  });
+  const entry = await patchSqliteSessionEntry(scope, update, options);
+  return entry ? { sessionKey: normalizeStoreSessionKey(scope.sessionKey), entry } : null;
 }
 
 /**
@@ -1362,14 +1318,7 @@ export async function updateSessionEntry(
   ) => Promise<Partial<SessionEntry> | null> | Partial<SessionEntry> | null,
   options: SessionEntryUpdateOptions = {},
 ): Promise<SessionEntry | null> {
-  return await updateFileSessionStoreEntry({
-    storePath: resolveSessionStorePathForScope(scope),
-    sessionKey: scope.sessionKey,
-    skipMaintenance: options.skipMaintenance,
-    takeCacheOwnership: options.takeCacheOwnership,
-    requireWriteSuccess: options.requireWriteSuccess,
-    update,
-  });
+  return await updateSqliteSessionEntry(scope, update, options);
 }
 
 /** Resolves one abort target identity without exposing the mutable store. */
@@ -1671,7 +1620,7 @@ export async function preserveTemporarySessionMapping<T>(
 export async function cleanupSessionLifecycleArtifacts(
   params: SessionLifecycleArtifactCleanupParams,
 ): Promise<SessionLifecycleArtifactCleanupResult> {
-  return await cleanupFileSessionLifecycleArtifacts(params);
+  return await cleanupSqliteSessionLifecycleArtifacts(params);
 }
 
 /** Resets one persisted session entry and transitions its transcript state. */
@@ -1960,24 +1909,14 @@ export async function appendTranscriptEvent(
   scope: SessionTranscriptAccessScope,
   event: TranscriptEvent,
 ): Promise<void> {
-  assertNonMessageTranscriptEvent(event);
-  const transcript = await resolveTranscriptAccess(scope);
-  await appendSessionTranscriptEvent({
-    event,
-    transcriptPath: transcript.sessionFile,
-  });
+  await appendSqliteTranscriptEvent(scope, event);
 }
 
 /** Reads parsed transcript records from an explicit or derived transcript target. */
 export async function loadTranscriptEvents(
   scope: SessionTranscriptReadScope,
 ): Promise<TranscriptEvent[]> {
-  const transcript = await resolveTranscriptAccess(scope);
-  const events: TranscriptEvent[] = [];
-  for await (const line of streamSessionTranscriptLines(transcript.sessionFile)) {
-    events.push(JSON.parse(line) as TranscriptEvent);
-  }
-  return events;
+  return await loadSqliteTranscriptEvents(scope);
 }
 
 function assertNonMessageTranscriptEvent(event: TranscriptEvent): void {
@@ -2011,22 +1950,7 @@ export async function appendTranscriptMessage<TMessage>(
   scope: SessionTranscriptWriteScope,
   options: TranscriptMessageAppendOptions<TMessage>,
 ): Promise<TranscriptMessageAppendResult<TMessage> | undefined> {
-  const transcript = await resolveTranscriptAccess(scope);
-  return await appendSessionTranscriptMessage({
-    transcriptPath: transcript.sessionFile,
-    message: options.message,
-    ...(scope.sessionId ? { sessionId: scope.sessionId } : {}),
-    ...(options.cwd ? { cwd: options.cwd } : {}),
-    ...(options.config ? { config: options.config } : {}),
-    ...(options.idempotencyLookup ? { idempotencyLookup: options.idempotencyLookup } : {}),
-    ...(options.now !== undefined ? { now: options.now } : {}),
-    ...(options.prepareMessageAfterIdempotencyCheck
-      ? { prepareMessageAfterIdempotencyCheck: options.prepareMessageAfterIdempotencyCheck }
-      : {}),
-    ...(options.useRawWhenLinear !== undefined
-      ? { useRawWhenLinear: options.useRawWhenLinear }
-      : {}),
-  });
+  return await appendSqliteTranscriptMessage(scope, options);
 }
 
 /** Emits a transcript update after resolving the current transcript target. */
@@ -2034,12 +1958,7 @@ export async function publishTranscriptUpdate(
   scope: SessionTranscriptWriteScope,
   update: TranscriptUpdatePayload = {},
 ): Promise<void> {
-  const transcript = await resolveTranscriptAccess(scope);
-  emitSessionTranscriptUpdate({
-    ...update,
-    sessionFile: transcript.sessionFile,
-    ...(transcript.target ? { target: transcript.target } : {}),
-  });
+  await publishSqliteTranscriptUpdate(scope, update);
 }
 
 /**
