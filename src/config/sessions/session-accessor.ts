@@ -1836,24 +1836,27 @@ export async function persistSessionRolloverLifecycle(params: {
   sessionKey: string;
   storePath: string;
 }): Promise<SessionLifecycleRolloverResult> {
-  await updateSessionStore(
-    params.storePath,
-    (store) => {
-      store[params.sessionKey] = {
-        ...store[params.sessionKey],
-        ...params.sessionEntry,
-      };
-      if (params.retiredEntry) {
-        store[params.retiredEntry.key] = params.retiredEntry.entry;
-      }
-      return store[params.sessionKey] ?? params.sessionEntry;
-    },
+  const upserts: SessionEntryLifecycleUpsert[] = [
     {
-      activeSessionKey: params.activeSessionKey,
-      maintenanceConfig: params.maintenanceConfig,
-      onWarn: params.onMaintenanceWarning,
+      sessionKey: params.sessionKey,
+      buildEntry: ({ currentEntry }) => ({
+        ...currentEntry,
+        ...params.sessionEntry,
+      }),
     },
-  );
+  ];
+  if (params.retiredEntry) {
+    upserts.push({
+      sessionKey: params.retiredEntry.key,
+      entry: params.retiredEntry.entry,
+    });
+  }
+  await applySessionEntryLifecycleMutation({
+    activeSessionKey: params.activeSessionKey,
+    maintenanceOverride: params.maintenanceConfig,
+    storePath: params.storePath,
+    upserts,
+  });
 
   const previousSessionTranscript = await archivePreviousSessionTranscript({
     agentId: params.agentId,
@@ -1873,7 +1876,12 @@ export function loadReplySessionInitializationSnapshot(params: {
   storePath: string;
   sessionKey: string;
 }): ReplySessionInitializationSnapshot {
-  const store = loadSessionStore(params.storePath, { skipCache: true, clone: false });
+  const store = Object.fromEntries(
+    listSessionEntries({ storePath: params.storePath }).map(({ sessionKey, entry }) => [
+      sessionKey,
+      entry,
+    ]),
+  );
   const resolved = resolveSessionStoreEntry({ store, sessionKey: params.sessionKey });
   const currentEntry = resolved.existing ? { ...resolved.existing } : undefined;
   const entries = cloneSessionEntries(store);
@@ -1913,75 +1921,76 @@ export async function commitReplySessionInitialization(params: {
   snapshotEntry?: SessionEntry;
   storePath: string;
 }): Promise<ReplySessionInitializationCommitResult> {
-  const committed = await updateSessionStore(
-    params.storePath,
-    async (store): Promise<ReplySessionInitializationCommitResult> => {
-      const resolved = resolveSessionStoreEntry({ store, sessionKey: params.sessionKey });
-      const currentEntry = resolved.existing ? { ...resolved.existing } : undefined;
-      const revision = createReplySessionInitializationRevision({
-        entry: currentEntry,
-        storePath: params.storePath,
-      });
-      if (revision !== params.expectedRevision) {
-        return {
-          ok: false,
-          ...(currentEntry ? { currentEntry } : {}),
-          reason: "stale-snapshot",
-          revision,
-        };
-      }
-
-      const readEntry = (sessionKey: string) => {
-        const entry = resolveSessionStoreEntry({ store, sessionKey }).existing;
-        return entry ? { ...entry } : undefined;
-      };
-      const preparedSessionEntry = params.prepareSessionEntry
-        ? await params.prepareSessionEntry({
-            ...(currentEntry ? { currentEntry } : {}),
-            readEntry,
-            sessionEntry: params.sessionEntry,
-          })
-        : params.sessionEntry;
-      const sessionEntry = resolveInitializedReplySessionEntry({
-        agentId: params.agentId,
-        ...(currentEntry ? { currentEntry } : {}),
-        fallbackSessionFile: params.fallbackSessionFile,
-        sessionEntry: preparedSessionEntry,
-        storePath: params.storePath,
-      });
-      // The identity-only guard allows commits when background activity touched
-      // non-identity metadata after the snapshot. Merge only the fields that
-      // actually changed since the snapshot so heartbeat/delivery/context
-      // metadata is not rolled back, while reset-cleared fields (e.g. provider
-      // or model overrides on /new) stay cleared.
-      store[resolved.normalizedKey] = currentEntry
-        ? mergeConcurrentReplySessionMetadata({
-            currentEntry,
-            preparedEntry: sessionEntry,
-            snapshotEntry: params.snapshotEntry ?? params.previousEntry,
-          })
-        : sessionEntry;
-      if (params.retiredEntry) {
-        store[params.retiredEntry.key] = params.retiredEntry.entry;
-      }
-      return {
-        ok: true,
-        previousSessionTranscript: {},
-        sessionEntry: { ...(store[resolved.normalizedKey] ?? sessionEntry) },
-        sessionStoreView: cloneSessionEntries(store),
-      };
-    },
-    {
-      activeSessionKey: params.activeSessionKey,
-      maintenanceConfig: params.maintenanceConfig,
-      onWarn: params.onMaintenanceWarning,
-      reentrant: true,
-      skipSaveWhenResult: (result) => !result.ok,
-    },
+  const store = Object.fromEntries(
+    listSessionEntries({ storePath: params.storePath }).map(({ sessionKey, entry }) => [
+      sessionKey,
+      entry,
+    ]),
   );
-  if (!committed.ok) {
-    return committed;
+  const resolved = resolveSessionStoreEntry({ store, sessionKey: params.sessionKey });
+  const currentEntry = resolved.existing ? { ...resolved.existing } : undefined;
+  const revision = createReplySessionInitializationRevision({
+    entry: currentEntry,
+    storePath: params.storePath,
+  });
+  if (revision !== params.expectedRevision) {
+    return {
+      ok: false,
+      ...(currentEntry ? { currentEntry } : {}),
+      reason: "stale-snapshot",
+      revision,
+    };
   }
+
+  const readEntry = (sessionKey: string) => {
+    const entry = resolveSessionStoreEntry({ store, sessionKey }).existing;
+    return entry ? { ...entry } : undefined;
+  };
+  const preparedSessionEntry = params.prepareSessionEntry
+    ? await params.prepareSessionEntry({
+        ...(currentEntry ? { currentEntry } : {}),
+        readEntry,
+        sessionEntry: params.sessionEntry,
+      })
+    : params.sessionEntry;
+  const sessionEntry = resolveInitializedReplySessionEntry({
+    agentId: params.agentId,
+    ...(currentEntry ? { currentEntry } : {}),
+    fallbackSessionFile: params.fallbackSessionFile,
+    sessionEntry: preparedSessionEntry,
+    storePath: params.storePath,
+  });
+  // The identity-only guard allows commits when background activity touched
+  // non-identity metadata after the snapshot. Merge only the fields that
+  // actually changed since the snapshot so heartbeat/delivery/context metadata
+  // is not rolled back, while reset-cleared fields stay cleared.
+  const committedSessionEntry = currentEntry
+    ? mergeConcurrentReplySessionMetadata({
+        currentEntry,
+        preparedEntry: sessionEntry,
+        snapshotEntry: params.snapshotEntry ?? params.previousEntry,
+      })
+    : sessionEntry;
+  store[resolved.normalizedKey] = committedSessionEntry;
+  const upserts: SessionEntryLifecycleUpsert[] = [
+    { sessionKey: resolved.normalizedKey, entry: committedSessionEntry },
+  ];
+  if (params.retiredEntry) {
+    store[params.retiredEntry.key] = params.retiredEntry.entry;
+    upserts.push({ sessionKey: params.retiredEntry.key, entry: params.retiredEntry.entry });
+  }
+  await applySessionEntryLifecycleMutation({
+    activeSessionKey: params.activeSessionKey,
+    maintenanceOverride: params.maintenanceConfig,
+    storePath: params.storePath,
+    upserts,
+  });
+  const committed: ReplySessionInitializationCommitResult = {
+    ok: true,
+    previousSessionTranscript: {},
+    sessionEntry: { ...committedSessionEntry },
+    sessionStoreView: cloneSessionEntries(store),
+  };
 
   const previousSessionTranscript = await archivePreviousSessionTranscript({
     agentId: params.agentId,
