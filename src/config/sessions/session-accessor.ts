@@ -34,6 +34,7 @@ import {
 } from "./plugin-host-cleanup.js";
 import {
   appendSqliteTranscriptEvent,
+  appendSqliteTranscriptEventSync,
   appendSqliteTranscriptMessage,
   applySqliteSessionEntryLifecycleMutation,
   appendSqliteExpectedSessionTranscriptTurn,
@@ -1990,6 +1991,14 @@ export async function appendTranscriptEvent(
   event: TranscriptEvent,
 ): Promise<void> {
   await appendSqliteTranscriptEvent(scope, event);
+}
+
+/** Appends a non-message transcript record synchronously for sync session runtimes. */
+export function appendTranscriptEventSync(
+  scope: SessionTranscriptAccessScope,
+  event: TranscriptEvent,
+): void {
+  appendSqliteTranscriptEventSync(scope, event);
 }
 
 /** Reads parsed transcript records from an explicit or derived transcript target. */
