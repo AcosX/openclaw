@@ -2676,7 +2676,7 @@ async function runEmbeddedAgentInternal(
                       sessionFile: activeSessionFile,
                       sessionId: activeSessionId,
                       sessionKey: params.sessionKey,
-                      sessionTarget: params.sessionTarget,
+                      sessionTarget: activeSessionTarget,
                     }),
                     tokenBudget: ctxInfo.tokens,
                     force: true,
@@ -2889,7 +2889,7 @@ async function runEmbeddedAgentInternal(
                       sessionFile: activeSessionFile,
                       sessionId: activeSessionId,
                       sessionKey: params.sessionKey,
-                      sessionTarget: params.sessionTarget,
+                      sessionTarget: activeSessionTarget,
                     }),
                     tokenBudget: ctxInfo.tokens,
                     ...(overflowTokenCountForCompaction !== undefined
