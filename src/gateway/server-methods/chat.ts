@@ -4021,7 +4021,7 @@ export const chatHandlers: GatewayRequestHandlers = {
           }
           return {
             sessionId: resolvedSessionId,
-            ...(backingSessionId ? { expectedSessionId: backingSessionId } : {}),
+            ...(entry?.sessionId ? { expectedSessionId: entry.sessionId } : {}),
             sessionKey,
             sessionEntry: latestEntry ?? entry,
             sessionStore: latestStore,

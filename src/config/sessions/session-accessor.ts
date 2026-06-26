@@ -1904,14 +1904,19 @@ export async function commitReplySessionInitialization(params: {
   const upserts: SessionEntryLifecycleUpsert[] = [
     {
       sessionKey: resolved.normalizedKey,
-      buildEntry: ({ currentEntry }) => {
+      buildEntry: ({ store }) => {
+        const commitResolved = resolveSessionStoreEntry({
+          store,
+          sessionKey: params.sessionKey,
+        });
+        const commitEntry = commitResolved.existing;
         const commitRevision = createReplySessionInitializationRevision({
-          entry: currentEntry,
+          entry: commitEntry,
           storePath: params.storePath,
         });
         if (commitRevision !== params.expectedRevision) {
           staleCommit = {
-            ...(currentEntry ? { currentEntry: { ...currentEntry } } : {}),
+            ...(commitEntry ? { currentEntry: { ...commitEntry } } : {}),
             revision: commitRevision,
           };
           return null;
@@ -1920,9 +1925,9 @@ export async function commitReplySessionInitialization(params: {
         // touched non-identity metadata after the snapshot. Merge only fields
         // that changed since the snapshot so delivery/context metadata is not
         // rolled back, while reset-cleared fields stay cleared.
-        committedSessionEntry = currentEntry
+        committedSessionEntry = commitEntry
           ? mergeConcurrentReplySessionMetadata({
-              currentEntry,
+              currentEntry: commitEntry,
               preparedEntry: sessionEntry,
               snapshotEntry: params.snapshotEntry ?? params.previousEntry,
             })
