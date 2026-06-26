@@ -1894,24 +1894,49 @@ export async function commitReplySessionInitialization(params: {
     sessionEntry: preparedSessionEntry,
     storePath: params.storePath,
   });
-  // The identity-only guard allows commits when background activity touched
-  // non-identity metadata after the snapshot. Merge only the fields that
-  // actually changed since the snapshot so heartbeat/delivery/context metadata
-  // is not rolled back, while reset-cleared fields stay cleared.
-  const committedSessionEntry = currentEntry
-    ? mergeConcurrentReplySessionMetadata({
-        currentEntry,
-        preparedEntry: sessionEntry,
-        snapshotEntry: params.snapshotEntry ?? params.previousEntry,
-      })
-    : sessionEntry;
-  store[resolved.normalizedKey] = committedSessionEntry;
+  let staleCommit:
+    | {
+        currentEntry?: SessionEntry;
+        revision: string;
+      }
+    | undefined;
+  let committedSessionEntry = sessionEntry;
   const upserts: SessionEntryLifecycleUpsert[] = [
-    { sessionKey: resolved.normalizedKey, entry: committedSessionEntry },
+    {
+      sessionKey: resolved.normalizedKey,
+      buildEntry: ({ currentEntry }) => {
+        const commitRevision = createReplySessionInitializationRevision({
+          entry: currentEntry,
+          storePath: params.storePath,
+        });
+        if (commitRevision !== params.expectedRevision) {
+          staleCommit = {
+            ...(currentEntry ? { currentEntry: { ...currentEntry } } : {}),
+            revision: commitRevision,
+          };
+          return null;
+        }
+        // The identity-only guard allows commits when background activity
+        // touched non-identity metadata after the snapshot. Merge only fields
+        // that changed since the snapshot so delivery/context metadata is not
+        // rolled back, while reset-cleared fields stay cleared.
+        committedSessionEntry = currentEntry
+          ? mergeConcurrentReplySessionMetadata({
+              currentEntry,
+              preparedEntry: sessionEntry,
+              snapshotEntry: params.snapshotEntry ?? params.previousEntry,
+            })
+          : sessionEntry;
+        return committedSessionEntry;
+      },
+    },
   ];
   if (params.retiredEntry) {
-    store[params.retiredEntry.key] = params.retiredEntry.entry;
-    upserts.push({ sessionKey: params.retiredEntry.key, entry: params.retiredEntry.entry });
+    const retiredEntry = params.retiredEntry;
+    upserts.push({
+      sessionKey: retiredEntry.key,
+      buildEntry: () => (staleCommit ? null : retiredEntry.entry),
+    });
   }
   await applySessionEntryLifecycleMutation({
     activeSessionKey: params.activeSessionKey,
@@ -1919,6 +1944,18 @@ export async function commitReplySessionInitialization(params: {
     storePath: params.storePath,
     upserts,
   });
+  if (staleCommit) {
+    return {
+      ok: false,
+      ...(staleCommit.currentEntry ? { currentEntry: staleCommit.currentEntry } : {}),
+      reason: "stale-snapshot",
+      revision: staleCommit.revision,
+    };
+  }
+  store[resolved.normalizedKey] = committedSessionEntry;
+  if (params.retiredEntry) {
+    store[params.retiredEntry.key] = params.retiredEntry.entry;
+  }
   const committed: ReplySessionInitializationCommitResult = {
     ok: true,
     previousSessionTranscript: {},

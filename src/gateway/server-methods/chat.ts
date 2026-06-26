@@ -4021,6 +4021,7 @@ export const chatHandlers: GatewayRequestHandlers = {
           }
           return {
             sessionId: resolvedSessionId,
+            ...(backingSessionId ? { expectedSessionId: backingSessionId } : {}),
             sessionKey,
             sessionEntry: latestEntry ?? entry,
             sessionStore: latestStore,
@@ -4239,6 +4240,11 @@ export const chatHandlers: GatewayRequestHandlers = {
                   }
                 : {}),
               requestedSessionId,
+              ...(entry?.sessionId
+                ? {
+                    expectedExistingSessionId: entry.sessionId,
+                  }
+                : {}),
               resumeRequestedSession: controlUiReconnectResume.resumeRequested,
               abortSignal: activeRunAbort.controller.signal,
               images: replyOptionImages,
