@@ -4093,6 +4093,7 @@ export const chatHandlers: GatewayRequestHandlers = {
             startedAt: number;
           }
         | undefined;
+      let persistDispatchErrorUserTurn: (() => Promise<void>) | undefined;
       let acceptedUserTurnSessionId = entry?.sessionId;
       const userTurnRecorder: UserTurnTranscriptRecorder = createUserTurnTranscriptRecorder({
         input: baseUserTurnInput,
@@ -5235,17 +5236,11 @@ export const chatHandlers: GatewayRequestHandlers = {
         })
         .catch(async (err: unknown) => {
           const errorMessage = String(err);
-          const emitAfterError =
+          persistDispatchErrorUserTurn =
             userTurnRecorder.hasPersisted() || userTurnRecorder.isBlocked()
-              ? Promise.resolve()
-              : persistGatewayUserTurnTranscript();
-          await emitAfterError.catch((transcriptErr: unknown) => {
-            context.logGateway.warn(
-              `webchat user transcript update failed after error: ${formatForLog(transcriptErr)}`,
-            );
-          });
+              ? undefined
+              : persistGatewayUserTurnTranscript;
           if (
-            !agentRunStarted &&
             !activeRunAbort.controller.signal.aborted &&
             !context.chatAbortedRuns.has(clientRunId)
           ) {
@@ -5284,22 +5279,9 @@ export const chatHandlers: GatewayRequestHandlers = {
           clearAgentRunContext(clientRunId, lifecycleGeneration);
           clearActiveChatSendDedupeRun(context.dedupe, activeChatSendDedupeKey, clientRunId);
           context.removeChatRun(clientRunId, clientRunId, sessionKey);
-          if (!pendingDispatchLifecycleError) {
-            return;
-          }
           const persistDispatchLifecycleError = async () => {
             const dispatchError = pendingDispatchLifecycleError;
             if (!dispatchError) {
-              return;
-            }
-            const hasActiveRun = hasTrackedActiveSessionRun({
-              context,
-              requestedKey: rawSessionKey,
-              canonicalKey: sessionKey,
-              ...(sessionKey === "global" && agentId ? { agentId } : {}),
-              defaultAgentId: resolveDefaultAgentId(cfg),
-            });
-            if (hasActiveRun) {
               return;
             }
             try {
@@ -5330,7 +5312,14 @@ export const chatHandlers: GatewayRequestHandlers = {
               );
             }
           };
-          void persistDispatchLifecycleError();
+          void (async () => {
+            await persistDispatchLifecycleError();
+            await persistDispatchErrorUserTurn?.().catch((transcriptErr: unknown) => {
+              context.logGateway.warn(
+                `webchat user transcript update failed after error: ${formatForLog(transcriptErr)}`,
+              );
+            });
+          })();
         });
     } catch (err) {
       activeRunAbort.cleanup({ force: true });
