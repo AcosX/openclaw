@@ -10,7 +10,7 @@ import {
   resolveSessionResetPolicy,
   type SessionFreshness,
 } from "../../config/sessions/reset-policy.js";
-import { loadSessionStore } from "../../config/sessions/store-load.js";
+import { listSessionEntries } from "../../config/sessions/session-accessor.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 
@@ -110,6 +110,7 @@ function sanitizeFreshCronSessionEntry(
 export function resolveCronSession(params: {
   cfg: OpenClawConfig;
   sessionKey: string;
+  sourceSessionKey?: string;
   nowMs: number;
   agentId: string;
   forceNew?: boolean;
@@ -119,8 +120,14 @@ export function resolveCronSession(params: {
   const storePath = resolveStorePath(sessionCfg?.store, {
     agentId: params.agentId,
   });
-  const store = params.store ?? loadSessionStore(storePath);
-  const entry = store[params.sessionKey];
+  const store =
+    params.store ??
+    Object.fromEntries(
+      listSessionEntries({ storePath }).map(({ sessionKey, entry }) => [sessionKey, entry]),
+    );
+  const sourceSessionKey = params.sourceSessionKey?.trim();
+  const sourceSessionDiffers = Boolean(sourceSessionKey && sourceSessionKey !== params.sessionKey);
+  const entry = store[sourceSessionKey || params.sessionKey];
 
   let sessionId: string;
   let isNewSession: boolean;
@@ -162,7 +169,7 @@ export function resolveCronSession(params: {
     systemSent = false;
   }
 
-  const previousSessionId = isNewSession ? entry?.sessionId : undefined;
+  const previousSessionId = isNewSession && !sourceSessionDiffers ? entry?.sessionId : undefined;
   clearBootstrapSnapshotOnSessionRollover({
     sessionKey: params.sessionKey,
     previousSessionId,
