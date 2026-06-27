@@ -58,6 +58,7 @@ import {
 import { resolveAgentMainSessionKey } from "../../config/sessions/main-session.js";
 import {
   applySessionPatchProjection,
+  canonicalizeSessionEntryAliases,
   createSessionEntryWithTranscript,
   loadTranscriptEvents,
   patchSessionEntry as patchAccessorSessionEntry,
@@ -2462,9 +2463,15 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       cfg,
       agentId: requestedAgentId,
     });
+    const hasAliasRows = target.storeKeys.some(
+      (storeKey) => storeKey !== target.canonicalKey && target.store[storeKey],
+    );
+    if (entry && hasAliasRows) {
+      await canonicalizeSessionEntryAliases({ storePath, target });
+    }
     const compactSessionScope = {
       agentId: target.agentId,
-      sessionKey: sessionStoreKey,
+      sessionKey: target.canonicalKey,
       storePath,
     };
     const sessionId = entry?.sessionId;
@@ -2486,7 +2493,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       const transcriptEvents = await loadTranscriptEvents({
         agentId: target.agentId,
         sessionId,
-        sessionKey: sessionStoreKey,
+        sessionKey: target.canonicalKey,
         storePath,
       }).catch(() => []);
       if (transcriptEvents.length === 0) {
@@ -2505,7 +2512,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       const compactionTranscriptTarget = await resolveSessionTranscriptRuntimeTarget({
         agentId: target.agentId,
         sessionId,
-        sessionKey: sessionStoreKey,
+        sessionKey: target.canonicalKey,
         storePath,
       });
 
@@ -2541,12 +2548,12 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       try {
         result = await compactEmbeddedAgentSession({
           sessionId,
-          sessionKey: sessionStoreKey,
+          sessionKey: target.canonicalKey,
           agentId: target.agentId,
           sessionTarget: {
             agentId: target.agentId,
             sessionId,
-            sessionKey: sessionStoreKey,
+            sessionKey: target.canonicalKey,
             storePath,
           },
           allowGatewaySubagentBinding: true,
@@ -2650,7 +2657,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       {
         sessionId,
         storePath,
-        sessionKey: sessionStoreKey,
+        sessionKey: target.canonicalKey,
         agentId: target.agentId,
       },
       {
@@ -2707,7 +2714,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       {
         sessionId,
         storePath,
-        sessionKey: sessionStoreKey,
+        sessionKey: target.canonicalKey,
         agentId: target.agentId,
       },
       {
