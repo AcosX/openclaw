@@ -2103,9 +2103,9 @@ describe("SessionManager.open", () => {
     sessionManager.mergePromptReleasedSessionEntries([deliveryEntry]);
     (
       sessionManager as unknown as {
-        rewriteFile: () => void;
+        replacePersistedTranscript: () => void;
       }
-    ).rewriteFile();
+    ).replacePersistedTranscript();
 
     const sessionFile = sessionManager.getSessionFile();
     expect(sessionFile).toBeDefined();
@@ -2284,9 +2284,9 @@ describe("SessionManager.open", () => {
     sessionManager.mergePromptReleasedSessionEntries([deliveryEntry]);
     (
       sessionManager as unknown as {
-        rewriteFile: () => void;
+        replacePersistedTranscript: () => void;
       }
-    ).rewriteFile();
+    ).replacePersistedTranscript();
 
     const sessionFile = sessionManager.getSessionFile();
     expect(sessionFile).toBeDefined();
@@ -2350,9 +2350,9 @@ describe("SessionManager.open", () => {
     ]);
     (
       sessionManager as unknown as {
-        rewriteFile: () => void;
+        replacePersistedTranscript: () => void;
       }
-    ).rewriteFile();
+    ).replacePersistedTranscript();
 
     const rewritten = (await fs.readFile(sessionFile, "utf-8"))
       .trim()
@@ -2532,9 +2532,9 @@ describe("SessionManager.open", () => {
     ]);
     (
       sessionManager as unknown as {
-        rewriteFile: () => void;
+        replacePersistedTranscript: () => void;
       }
-    ).rewriteFile();
+    ).replacePersistedTranscript();
 
     expect(sessionManager.getLeafId()).toBe(baseAnswerId);
     const sessionFile = sessionManager.getSessionFile();
