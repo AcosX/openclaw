@@ -2672,7 +2672,7 @@ function resolveSessionTranscriptRuntimeContext(
   }
   const sessionStore = scope.storePath
     ? Object.fromEntries(
-        listSessionEntries({ storePath: scope.storePath }).map(({ sessionKey, entry }) => [
+        listSessionEntries({ agentId, storePath: scope.storePath }).map(({ sessionKey, entry }) => [
           sessionKey,
           entry,
         ]),
