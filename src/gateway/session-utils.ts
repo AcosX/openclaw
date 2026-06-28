@@ -1441,6 +1441,10 @@ function resolveGatewaySessionStoreLookup(params: {
   };
 }
 
+function isAgentScopedSentinelSessionKey(canonicalKey: string): boolean {
+  return canonicalKey === "global" || canonicalKey === "unknown";
+}
+
 function resolveExplicitDeletedLegacyMainStoreTarget(params: {
   cfg: OpenClawConfig;
   key: string;
@@ -1532,7 +1536,7 @@ export function resolveGatewaySessionStoreTargetWithStore(params: {
   });
   const requestedAgentId = normalizeOptionalString(params.agentId);
   const agentId =
-    canonicalKey === "global" && requestedAgentId
+    isAgentScopedSentinelSessionKey(canonicalKey) && requestedAgentId
       ? normalizeAgentId(requestedAgentId)
       : resolveSessionStoreAgentId(params.cfg, canonicalKey);
   const { storePath, store } = resolveGatewaySessionStoreLookup({

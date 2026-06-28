@@ -2067,6 +2067,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       agentId: requestedAgentId,
     });
     const applied = await applySessionPatchProjection({
+      agentId: target.agentId,
       storePath,
       resolveTarget: ({ entries }) => {
         const store = Object.fromEntries(
@@ -2466,7 +2467,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       (storeKey) => storeKey !== target.canonicalKey && target.store[storeKey],
     );
     if (entry && hasAliasRows) {
-      await canonicalizeSessionEntryAliases({ storePath, target });
+      await canonicalizeSessionEntryAliases({ agentId: target.agentId, storePath, target });
     }
     const compactSessionScope = {
       agentId: target.agentId,
