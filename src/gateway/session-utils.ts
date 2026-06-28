@@ -885,7 +885,7 @@ function resolveTranscriptUsageFallback(params: {
   const storePath =
     resolveConcreteSessionStorePath(params.storePath) ??
     resolveStorePath(params.cfg.session?.store, { agentId });
-  let snapshot: ReturnType<typeof readScopedRecentSessionUsageFromTranscript> = null;
+  let snapshot: ReturnType<typeof readScopedRecentSessionUsageFromTranscript>;
   try {
     snapshot = readScopedRecentSessionUsageFromTranscript(
       {
@@ -898,7 +898,7 @@ function resolveTranscriptUsageFallback(params: {
       typeof params.maxTranscriptBytes === "number" ? params.maxTranscriptBytes : 256 * 1024,
     );
   } catch {
-    snapshot = null;
+    return null;
   }
   if (!snapshot) {
     return null;
