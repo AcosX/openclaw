@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import {

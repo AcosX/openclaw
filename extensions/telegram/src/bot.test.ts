@@ -183,6 +183,7 @@ async function writeDirectTelegramTranscriptContext(params: {
       sessionId: params.sessionId,
       chatType: "direct",
       channel: "telegram",
+      updatedAt: 1,
     },
   });
   await appendSessionTranscriptMessageByIdentity({

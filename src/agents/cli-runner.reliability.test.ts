@@ -277,7 +277,9 @@ async function readTranscriptMessages(sessionFile: string): Promise<unknown[]> {
     sessionId,
     sessionKey: "agent:main:main",
   });
-  return events.map((entry) => entry.message).filter(Boolean);
+  return events.flatMap((entry) =>
+    typeof entry === "object" && entry !== null && "message" in entry ? [entry.message] : [],
+  );
 }
 
 async function seedSqliteSessionEntry(params: {
@@ -3047,7 +3049,9 @@ describe("runCliAgent reliability", () => {
         sessionKey: "agent:main:main",
         storePath,
       });
-      const messages = events.map((entry) => entry.message).filter(Boolean);
+      const messages = events.flatMap((entry) =>
+        typeof entry === "object" && entry !== null && "message" in entry ? [entry.message] : [],
+      );
       expect(messages).toContainEqual(
         expect.objectContaining({
           role: "user",
