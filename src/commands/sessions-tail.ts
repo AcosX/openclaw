@@ -17,14 +17,8 @@ import { formatErrorMessage } from "../infra/errors.js";
 import { parseStrictNonNegativeInteger } from "../infra/parse-finite-number.js";
 import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import type { RuntimeEnv } from "../runtime.js";
-import {
-  resolveTrajectoryFilePath,
-  resolveTrajectoryPointerFilePath,
-} from "../trajectory/paths.js";
-import {
-  isRegularNonSymlinkFile,
-  resolveTrajectoryRuntimeFile,
-} from "../trajectory/runtime-file.js";
+import { resolveTrajectoryFilePath } from "../trajectory/paths.js";
+import { resolveTrajectoryRuntimeFile } from "../trajectory/runtime-file.js";
 import type { TrajectoryEvent } from "../trajectory/types.js";
 import { resolveSessionStoreTargetsOrExit } from "./session-store-targets.js";
 import { shortenText } from "./text-format.js";
@@ -343,72 +337,20 @@ function compareSelectionsByUpdatedAt(a: TailSelection, b: TailSelection): numbe
   return (b.entry.updatedAt ?? 0) - (a.entry.updatedAt ?? 0);
 }
 
-function deriveSessionFileFallbackId(entry: SessionEntry): string | undefined {
-  const sessionId = entry.sessionId?.trim();
-  if (sessionId) {
-    return sessionId;
-  }
-  const sessionFile = entry.sessionFile?.trim();
-  if (!sessionFile) {
-    return undefined;
-  }
-  return "session";
-}
-
-async function readTrajectoryPointerSessionId(sessionFile: string): Promise<string | undefined> {
-  const pointerPath = resolveTrajectoryPointerFilePath(sessionFile);
-  if (!(await isRegularNonSymlinkFile(pointerPath))) {
-    return undefined;
-  }
-  try {
-    const parsed = JSON.parse(fs.readFileSync(pointerPath, "utf8")) as unknown;
-    if (!isRecord(parsed) || typeof parsed.sessionId !== "string") {
-      return undefined;
-    }
-    const sessionId = parsed.sessionId.trim();
-    return sessionId || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 async function resolveTailTrajectoryPath(params: {
   sessionFile: string;
-  sessionId?: string;
+  sessionId: string;
 }): Promise<string> {
-  if (params.sessionId) {
-    return (
-      (await resolveTrajectoryRuntimeFile({
-        sessionFile: params.sessionFile,
-        sessionId: params.sessionId,
-      })) ??
-      resolveTrajectoryFilePath({
-        sessionFile: params.sessionFile,
-        sessionId: params.sessionId,
-      })
-    );
-  }
-
-  const pointerSessionId = await readTrajectoryPointerSessionId(params.sessionFile);
-  if (pointerSessionId) {
-    const pointerRuntimePath = await resolveTrajectoryRuntimeFile({
+  return (
+    (await resolveTrajectoryRuntimeFile({
       sessionFile: params.sessionFile,
-      sessionId: pointerSessionId,
-    });
-    if (pointerRuntimePath) {
-      return pointerRuntimePath;
-    }
-    return resolveTrajectoryFilePath({
+      sessionId: params.sessionId,
+    })) ??
+    resolveTrajectoryFilePath({
       sessionFile: params.sessionFile,
-      sessionId: pointerSessionId,
-    });
-  }
-
-  return resolveTrajectoryFilePath({
-    env: {},
-    sessionFile: params.sessionFile,
-    sessionId: "session",
-  });
+      sessionId: params.sessionId,
+    })
+  );
 }
 
 async function buildTailSelection(params: {
@@ -418,21 +360,23 @@ async function buildTailSelection(params: {
   storePath: string;
 }): Promise<TailSelection | null> {
   const sessionId = params.entry.sessionId?.trim();
-  const fallbackSessionId = deriveSessionFileFallbackId(params.entry);
-  if (!fallbackSessionId) {
+  if (!sessionId) {
     return null;
   }
   const sessionsDir = path.dirname(params.storePath);
   let sessionFile: string;
   try {
-    sessionFile = resolveSessionFilePath(fallbackSessionId, params.entry, {
+    sessionFile = resolveSessionFilePath(sessionId, params.entry, {
       agentId: params.agentId,
       sessionsDir,
     });
   } catch {
     return null;
   }
-  const trajectoryPath = await resolveTailTrajectoryPath({ sessionFile, sessionId });
+  const trajectoryPath = await resolveTailTrajectoryPath({
+    sessionFile,
+    sessionId,
+  });
   return {
     agentId: params.agentId,
     entry: params.entry,
