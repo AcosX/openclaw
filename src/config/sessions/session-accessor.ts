@@ -56,6 +56,7 @@ import {
   purgeSqliteDeletedAgentSessionEntries,
   readSqliteSessionUpdatedAt,
   replaceSqliteTranscriptEvents,
+  replaceSqliteTranscriptEventsSync,
   replaceSqliteSessionEntry,
   resolveSqliteSessionKeyBySessionId,
   resolveSqliteSessionParentForkDecision,
@@ -2153,6 +2154,14 @@ export async function replaceTranscriptEvents(
   events: TranscriptEvent[],
 ): Promise<void> {
   await replaceSqliteTranscriptEvents(scope, events);
+}
+
+/** Replaces all transcript records synchronously for sync session runtimes. */
+export function replaceTranscriptEventsSync(
+  scope: SessionTranscriptAccessScope,
+  events: TranscriptEvent[],
+): boolean {
+  return replaceSqliteTranscriptEventsSync(scope, events);
 }
 
 /** Reads parsed transcript records synchronously from the SQLite transcript store. */
