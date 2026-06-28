@@ -11,6 +11,7 @@ import { readAcpSessionMeta } from "../acp/runtime/session-meta.js";
 import { getRuntimeConfig } from "../config/config.js";
 import { resolveSessionFilePath } from "../config/sessions/paths.js";
 import { listSessionEntries } from "../config/sessions/session-accessor.js";
+import { parseSqliteSessionFileMarker } from "../config/sessions/sqlite-marker.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import { resolveStoredSessionKeyForAgentStore } from "../gateway/session-store-key.js";
 import { formatErrorMessage } from "../infra/errors.js";
@@ -366,10 +367,12 @@ async function buildTailSelection(params: {
   const sessionsDir = path.dirname(params.storePath);
   let sessionFile: string;
   try {
-    sessionFile = resolveSessionFilePath(sessionId, params.entry, {
-      agentId: params.agentId,
-      sessionsDir,
-    });
+    sessionFile = parseSqliteSessionFileMarker(params.entry.sessionFile)
+      ? params.entry.sessionFile
+      : resolveSessionFilePath(sessionId, params.entry, {
+          agentId: params.agentId,
+          sessionsDir,
+        });
   } catch {
     return null;
   }
