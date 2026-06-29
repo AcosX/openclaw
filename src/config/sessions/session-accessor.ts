@@ -1832,7 +1832,10 @@ export async function cleanupPluginHostSessionStore(
   }
   const now = Date.now();
   let cleared = 0;
-  for (const { entry, sessionKey } of listSessionEntries({ storePath: params.storePath })) {
+  for (const { entry, sessionKey } of listSessionEntries({
+    agentId: params.agentId,
+    storePath: params.storePath,
+  })) {
     if (
       !matchesPluginHostCleanupSession(sessionKey, entry, params.sessionKey) ||
       !hasPluginHostCleanupTarget(entry, params)
@@ -1840,7 +1843,7 @@ export async function cleanupPluginHostSessionStore(
       continue;
     }
     const updated = await patchSessionEntry(
-      { sessionKey, storePath: params.storePath },
+      { agentId: params.agentId, sessionKey, storePath: params.storePath },
       (currentEntry) => {
         if (!hasPluginHostCleanupTarget(currentEntry, params)) {
           return null;
