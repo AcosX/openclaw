@@ -18,7 +18,6 @@ import {
 } from "../../config/sessions/session-accessor.js";
 import { formatSqliteSessionFileMarker } from "../../config/sessions/sqlite-marker.js";
 import { runExclusiveSessionStoreWrite } from "../../config/sessions/store-writer.js";
-import { readSessionStoreForTest } from "../../config/sessions/test-helpers.js";
 import { formatZonedTimestamp } from "../../infra/format-time/format-datetime.ts";
 import {
   testing as sessionBindingTesting,
@@ -2324,7 +2323,7 @@ describe("initSessionState reset policy", () => {
     expect(result.abortedLastRun).toBe(false);
     expect(result.sessionEntry.abortedLastRun).toBeUndefined();
 
-    const persisted = readSessionStoreForTest(storePath);
+    const persisted = readSessionStoreFast(storePath);
     expect(persisted[sessionKey]?.sessionId).toBe(existingSessionId);
     expect(persisted[sessionKey]?.status).toBeUndefined();
     expect(persisted[sessionKey]?.startedAt).toBeUndefined();
