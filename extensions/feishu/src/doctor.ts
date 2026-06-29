@@ -760,7 +760,7 @@ async function repairFeishuDoctorState(params: {
       for (const key of keys) {
         const deleted = await deleteSessionEntry({
           agentId: group.agentId,
-          archiveTranscript: false,
+          archiveTranscript: true,
           sessionKey: key,
           storePath,
         });
