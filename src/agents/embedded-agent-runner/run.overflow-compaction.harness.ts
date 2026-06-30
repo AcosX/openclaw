@@ -692,6 +692,7 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     resolveLiveToolResultMaxChars: mockedResolveLiveToolResultMaxChars,
     sessionLikelyHasOversizedToolResults: mockedSessionLikelyHasOversizedToolResults,
     truncateOversizedToolResultsInSession: mockedTruncateOversizedToolResultsInSession,
+    truncateOversizedToolResultsInRuntimeTranscript: mockedTruncateOversizedToolResultsInSession,
   }));
 
   vi.doMock("./context-engine-maintenance.js", () => ({
