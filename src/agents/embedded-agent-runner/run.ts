@@ -242,7 +242,7 @@ import type { EmbeddedRunFastModeParam } from "./run/types.js";
 import {
   resolveLiveToolResultMaxChars,
   sessionLikelyHasOversizedToolResults,
-  truncateOversizedToolResultsInRuntimeTranscript,
+  truncateOversizedToolResultsInActiveTarget,
 } from "./tool-result-truncation.js";
 import type {
   EmbeddedAgentMeta,
@@ -3002,7 +3002,7 @@ async function runEmbeddedAgentInternal(
                   lastCompactionTokensAfter = Math.floor(compactResult.result.tokensAfter);
                 }
                 if (preflightRecovery?.route === "compact_then_truncate") {
-                  const truncResult = await truncateOversizedToolResultsInRuntimeTranscript({
+                  const truncResult = await truncateOversizedToolResultsInActiveTarget({
                     scope: {
                       sessionId: activeSessionId,
                       sessionKey: params.sessionKey ?? activeSessionId,
@@ -3074,7 +3074,7 @@ async function runEmbeddedAgentInternal(
                   `[context-overflow-recovery] Attempting tool result truncation for ${provider}/${modelId} ` +
                     `(contextWindow=${contextWindowTokens} tokens)`,
                 );
-                const truncResult = await truncateOversizedToolResultsInRuntimeTranscript({
+                const truncResult = await truncateOversizedToolResultsInActiveTarget({
                   scope: {
                     sessionId: activeSessionId,
                     sessionKey: params.sessionKey ?? activeSessionId,
