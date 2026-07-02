@@ -1092,6 +1092,91 @@ describe("sqlite session normalization", () => {
     });
   });
 
+  it("exposes same-key rollover lineage when a killed session is replaced", async () => {
+    const env = { ...process.env, OPENCLAW_STATE_DIR: paths.stateDir };
+    const sessionKey = "agent:main:telegram:group:-1003774691294:topic:29020";
+    const oldSessionId = "f1321535-878b-47cd-b35e-2f5f4bae2bb5";
+    const newSessionId = "c0daccb0-0555-47d8-8747-9b53addf1fe2";
+    const scope = {
+      agentId: "main",
+      env,
+      sessionKey,
+      storePath: paths.sqlitePath,
+    };
+
+    await upsertSqliteSessionEntry(scope, {
+      channel: "telegram",
+      chatType: "group",
+      displayName: "telegram:g-bucephalus-+-topics",
+      sessionId: oldSessionId,
+      status: "killed",
+      updatedAt: 1_782_973_392_492,
+    });
+    await appendSqliteTranscriptEvent(
+      { ...scope, sessionId: oldSessionId },
+      {
+        id: "old-frontier",
+        payload: { label: "old transcript frontier" },
+        type: "metadata",
+      },
+    );
+
+    await upsertSqliteSessionEntry(scope, {
+      channel: "telegram",
+      chatType: "group",
+      displayName: "telegram:g-bucephalus-+-topics",
+      sessionId: newSessionId,
+      status: "running",
+      updatedAt: 1_782_997_881_018,
+    });
+    await appendSqliteTranscriptEvent(
+      { ...scope, sessionId: newSessionId },
+      {
+        id: "new-turn",
+        payload: { label: "new active turn" },
+        type: "metadata",
+      },
+    );
+
+    await expect(
+      loadSqliteTranscriptEvents({ ...scope, sessionId: oldSessionId }),
+    ).resolves.toEqual([expect.objectContaining({ id: "old-frontier", type: "metadata" })]);
+    await expect(
+      loadSqliteTranscriptEvents({ ...scope, sessionId: newSessionId }),
+    ).resolves.toEqual([expect.objectContaining({ id: "new-turn", type: "metadata" })]);
+    expect(loadSqliteSessionEntry(scope)).toEqual(
+      expect.objectContaining({
+        sessionId: newSessionId,
+        usageFamilyKey: sessionKey,
+        usageFamilySessionIds: [oldSessionId, newSessionId],
+      }),
+    );
+  });
+
+  it("keeps exact SQLite replacement entries free of inferred rollover lineage", async () => {
+    const env = { ...process.env, OPENCLAW_STATE_DIR: paths.stateDir };
+    const scope = {
+      agentId: "main",
+      env,
+      sessionKey: "agent:main:restore-exact",
+      storePath: paths.sqlitePath,
+    };
+
+    await upsertSqliteSessionEntry(scope, {
+      sessionId: "temporary-session",
+      updatedAt: 10,
+    });
+    await replaceSqliteSessionEntry(scope, {
+      sessionId: "restored-session",
+      updatedAt: 20,
+    });
+
+    expect(loadSqliteSessionEntry(scope)).toEqual({
+      sessionId: "restored-session",
+      updatedAt: 20,
+    });
+  });
+
   it("skips parent fork when transcript rows exceed the token budget and entry totals are stale", async () => {
     const env = { ...process.env, OPENCLAW_STATE_DIR: paths.stateDir };
     const parentKey = "agent:main:parent";

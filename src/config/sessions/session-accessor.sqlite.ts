@@ -414,11 +414,18 @@ export async function patchSqliteSessionEntry(
       if (!patch) {
         return cloneSessionEntry(writeBase);
       }
-      const next = options.replaceEntry
+      const merged = options.replaceEntry
         ? cloneSessionEntry(patch as SessionEntry)
         : options.preserveActivity
           ? mergeSessionEntryPreserveActivity(writeBase, patch)
           : mergeSessionEntry(writeBase, patch);
+      const next = options.replaceEntry
+        ? merged
+        : preserveSqliteSameKeySessionRolloverLineage({
+            next: merged,
+            previous: writeBase,
+            sessionKey: resolved.sessionKey,
+          });
       writeSessionEntry(writeDatabase, resolved.sessionKey, next);
       deleteLegacySessionEntryRows(writeDatabase, fresh?.legacyKeys ?? [], resolved.sessionKey);
       maintenancePlans.push(
@@ -460,11 +467,18 @@ export async function patchSqliteSessionEntryTarget(
       if (!patch) {
         return cloneSessionEntry(writeBase);
       }
-      const next = options.replaceEntry
+      const merged = options.replaceEntry
         ? cloneSessionEntry(patch as SessionEntry)
         : options.preserveActivity
           ? mergeSessionEntryPreserveActivity(writeBase, patch)
           : mergeSessionEntry(writeBase, patch);
+      const next = options.replaceEntry
+        ? merged
+        : preserveSqliteSameKeySessionRolloverLineage({
+            next: merged,
+            previous: writeBase,
+            sessionKey: scope.target.canonicalKey,
+          });
       deleteSqliteLifecycleTargetRows(writeDatabase, scope.target);
       writeSessionEntry(writeDatabase, scope.target.canonicalKey, next);
       maintenancePlans.push(
@@ -640,7 +654,12 @@ async function persistSqliteParentForkSkipPatch(params: {
   if (!params.patch) {
     return cloneSessionEntry(params.entry);
   }
-  const next = mergeSessionEntry(params.entry, params.patch);
+  const merged = mergeSessionEntry(params.entry, params.patch);
+  const next = preserveSqliteSameKeySessionRolloverLineage({
+    next: merged,
+    previous: params.entry,
+    sessionKey: params.sessionTarget.canonicalKey,
+  });
   const maintenancePlans: SqliteSessionEntryMaintenancePlan[] = [];
   runOpenClawAgentWriteTransaction((database) => {
     deleteSqliteLifecycleTargetRows(database, params.sessionTarget);
@@ -677,7 +696,12 @@ export async function updateSqliteSessionEntry(
       if (!patch) {
         return cloneSessionEntry(fresh.entry);
       }
-      const next = mergeSessionEntry(fresh.entry, patch);
+      const merged = mergeSessionEntry(fresh.entry, patch);
+      const next = preserveSqliteSameKeySessionRolloverLineage({
+        next: merged,
+        previous: fresh.entry,
+        sessionKey: resolved.sessionKey,
+      });
       writeSessionEntry(writeDatabase, resolved.sessionKey, next);
       deleteLegacySessionEntryRows(writeDatabase, fresh.legacyKeys, resolved.sessionKey);
       maintenancePlans.push(
@@ -1954,6 +1978,30 @@ function createFallbackSessionEntry(patch: Partial<SessionEntry>): SessionEntry 
 
 function cloneSessionEntry(entry: SessionEntry): SessionEntry {
   return structuredClone(entry);
+}
+
+function preserveSqliteSameKeySessionRolloverLineage(params: {
+  next: SessionEntry;
+  previous: SessionEntry;
+  sessionKey: string;
+}): SessionEntry {
+  const previousSessionId = params.previous.sessionId.trim();
+  const nextSessionId = params.next.sessionId.trim();
+  if (!previousSessionId || !nextSessionId || previousSessionId === nextSessionId) {
+    return params.next;
+  }
+
+  return {
+    ...params.next,
+    usageFamilyKey:
+      params.next.usageFamilyKey ?? params.previous.usageFamilyKey ?? params.sessionKey,
+    usageFamilySessionIds: uniqueStrings([
+      ...(params.previous.usageFamilySessionIds ?? []),
+      previousSessionId,
+      ...(params.next.usageFamilySessionIds ?? []),
+      nextSessionId,
+    ]),
+  };
 }
 
 function normalizeSqliteText(value: unknown): string | null {
