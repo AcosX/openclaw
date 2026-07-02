@@ -721,9 +721,15 @@ export async function cleanupSqliteSessionLifecycleArtifacts(
     const materializedPlans = materializeSqliteSessionStateDeletePlans(cleanupPlan.deletePlans);
     let removedEntries = 0;
     let archivedTranscripts: SessionLifecycleArchivedTranscript[] = [];
-    runOpenClawAgentWriteTransaction((database) => {
-      removedEntries = deletePlannedSqliteLifecycleArtifactEntries(database, cleanupPlan.entries);
-      archivedTranscripts = deleteMaterializedSqliteSessionStatePlans(database, materializedPlans);
+    runOpenClawAgentWriteTransaction((transactionDb) => {
+      removedEntries = deletePlannedSqliteLifecycleArtifactEntries(
+        transactionDb,
+        cleanupPlan.entries,
+      );
+      archivedTranscripts = deleteMaterializedSqliteSessionStatePlans(
+        transactionDb,
+        materializedPlans,
+      );
     }, toDatabaseOptions(resolved));
     return {
       removedEntries,
@@ -812,13 +818,13 @@ export async function deleteSqliteSessionEntryLifecycle(
         })
       : [];
     const materializedPlans = materializeSqliteSessionStateDeletePlans(deletePlans);
-    runOpenClawAgentWriteTransaction((database) => {
-      if (!sqliteLifecycleTargetMatchesExpectedEntry(database, params.target, current.entry)) {
+    runOpenClawAgentWriteTransaction((transactionDb) => {
+      if (!sqliteLifecycleTargetMatchesExpectedEntry(transactionDb, params.target, current.entry)) {
         return;
       }
-      deleteSqliteLifecycleTargetRows(database, params.target);
+      deleteSqliteLifecycleTargetRows(transactionDb, params.target);
       const archivedTranscripts = deleteMaterializedSqliteSessionStatePlans(
-        database,
+        transactionDb,
         materializedPlans,
       );
       result = {
@@ -861,7 +867,6 @@ export async function applySqliteSessionEntryLifecycleMutation(params: {
     let archivedTranscripts: SessionLifecycleArchivedTranscript[] = [];
     const maintenancePlans: SqliteSessionEntryMaintenancePlan[] = [];
     let artifactCleanupError: unknown;
-    let afterCount = 0;
     const captureArtifactCleanupError = (error: unknown): void => {
       if (params.captureArtifactCleanupError === true) {
         artifactCleanupError ??= error;
@@ -929,7 +934,7 @@ export async function applySqliteSessionEntryLifecycleMutation(params: {
       maintenancePlans,
     );
     archivedTranscripts = [...archivedTranscripts, ...maintenanceArchivedTranscripts];
-    afterCount = readSqliteSessionEntryCount(
+    const afterCount = readSqliteSessionEntryCount(
       openOpenClawAgentDatabase(toDatabaseOptions(resolved)),
     );
     emitArchivedSqliteTranscriptUpdates(archivedTranscripts);
@@ -1003,22 +1008,24 @@ export async function purgeSqliteDeletedAgentSessionEntries(
     const removedSessionKeys = entryRemovals.map((removal) => removal.sessionKey);
     let archivedTranscripts: SessionLifecycleArchivedTranscript[] = [];
     const maintenancePlans: SqliteSessionEntryMaintenancePlan[] = [];
-    let afterCount = 0;
-    runOpenClawAgentWriteTransaction((database) => {
-      deletePlannedSqliteLifecycleArtifactEntries(database, entryRemovals);
+    runOpenClawAgentWriteTransaction((transactionDb) => {
+      deletePlannedSqliteLifecycleArtifactEntries(transactionDb, entryRemovals);
       maintenancePlans.push(
-        applySqliteSessionEntryMaintenance(database, {
+        applySqliteSessionEntryMaintenance(transactionDb, {
           activeSessionKey: "",
           archiveDirectory: resolveSqliteTranscriptArchiveDirectory(resolved),
         }),
       );
-      archivedTranscripts = deleteMaterializedSqliteSessionStatePlans(database, materializedPlans);
+      archivedTranscripts = deleteMaterializedSqliteSessionStatePlans(
+        transactionDb,
+        materializedPlans,
+      );
     }, toDatabaseOptions(resolved));
     archivedTranscripts = [
       ...archivedTranscripts,
       ...finalizeSqliteSessionEntryMaintenancePlansBestEffort(resolved, maintenancePlans),
     ];
-    afterCount = readSqliteSessionEntryCount(
+    const afterCount = readSqliteSessionEntryCount(
       openOpenClawAgentDatabase(toDatabaseOptions(resolved)),
     );
     emitArchivedSqliteTranscriptUpdates(archivedTranscripts);
@@ -2918,7 +2925,7 @@ function materializeSqliteSessionStateDeletePlans(
             sourcePath: path.join(plan.archiveDirectory, `${plan.sessionId}.jsonl`),
           }
         : null;
-    return { ...plan, archivedTranscript };
+    return Object.assign({}, plan, { archivedTranscript });
   });
 }
 

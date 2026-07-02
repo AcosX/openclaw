@@ -27,10 +27,7 @@ import {
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import type { getProcessSupervisor } from "../process/supervisor/index.js";
 import type { RunExit } from "../process/supervisor/types.js";
-import {
-  createUserTurnTranscriptRecorder,
-  type UserTurnTranscriptRecorder,
-} from "../sessions/user-turn-transcript.js";
+import { createUserTurnTranscriptRecorder } from "../sessions/user-turn-transcript.js";
 import { runSkillResearchAutoCapture } from "../skills/research/autocapture.js";
 import { captureEnv, setTestEnvValue } from "../test-utils/env.js";
 import { runPreparedCliAgent } from "./cli-runner.js";
