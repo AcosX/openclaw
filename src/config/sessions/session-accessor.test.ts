@@ -1192,7 +1192,7 @@ describe("session accessor seam", () => {
     });
   });
 
-  it("preserves SQLite transcript rows for lifecycle removals without archive intent", async () => {
+  it("reclaims SQLite transcript rows for lifecycle removals without archive intent", async () => {
     const scope = {
       sessionId: "session-1",
       sessionKey: "agent:main:preserve",
@@ -1218,13 +1218,7 @@ describe("session accessor seam", () => {
     expect(result.removedEntries).toBe(1);
     expect(result.archivedTranscriptDirectories).toEqual([]);
     expect(loadSessionEntry(scope)).toBeUndefined();
-    await expect(loadTranscriptEvents(scope)).resolves.toEqual([
-      {
-        id: "event-1",
-        message: { role: "user", content: "keep me" },
-        type: "message",
-      },
-    ]);
+    await expect(loadTranscriptEvents(scope)).resolves.toEqual([]);
   });
 
   it("captures SQLite archived transcript cleanup failures when requested", async () => {
