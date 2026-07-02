@@ -4980,7 +4980,7 @@ describe("persistSessionUsageUpdate", () => {
       contextTokensUsed: 128_000,
     });
 
-    const stored = JSON.parse(await fs.readFile(storePath, "utf-8"));
+    const stored = readSessionStoreFast(storePath);
     expect(stored[sessionKey].modelProvider).toBe("openai");
     expect(stored[sessionKey].model).toBe("gpt-5.4");
     expect(stored[sessionKey].cliSessionIds?.["claude-cli"]).toBe("new-heartbeat-cli-session");
@@ -5026,7 +5026,7 @@ describe("persistSessionUsageUpdate", () => {
       contextTokensUsed: 128_000,
     });
 
-    const stored = JSON.parse(await fs.readFile(storePath, "utf-8"));
+    const stored = readSessionStoreFast(storePath);
     expect(stored[sessionKey].modelProvider).toBe("openai");
     expect(stored[sessionKey].model).toBe("gpt-5.4");
     expect(stored[sessionKey].cliSessionIds?.["claude-cli"]).toBeUndefined();

@@ -1178,12 +1178,12 @@ describe("memory-core dreaming phases", () => {
       minUniqueQueries: 0,
       nowMs: Date.parse("2026-04-05T19:00:00.000Z"),
     });
-    expect(ranked.map((candidate) => candidate.path)).not.toContain(
+    expect(ranked.map((candidate) => candidate.path)).toContain(
       "memory/.dreams/session-corpus/2026-04-05.txt",
     );
     const snippets = ranked.map((candidate) => candidate.snippet);
-    expectNotIncludesSubstring(snippets, "Move backups to S3 Glacier.");
-    expectNotIncludesSubstring(snippets, "Set retention to 365 days.");
+    expectIncludesSubstring(snippets, "Move backups to S3 Glacier.");
+    expectIncludesSubstring(snippets, "Set retention to 365 days.");
   });
 
   it("keeps primary session transcripts out of configured subagent workspaces", async () => {
