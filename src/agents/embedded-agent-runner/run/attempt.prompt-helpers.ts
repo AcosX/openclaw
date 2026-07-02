@@ -26,7 +26,7 @@ import { buildActiveImageGenerationTaskPromptContextForSession } from "../../ima
 import { buildActiveMusicGenerationTaskPromptContextForSession } from "../../music-generation-task-status.js";
 import { prependSystemPromptAdditionAfterCacheBoundary } from "../../system-prompt-cache-boundary.js";
 import { resolveEffectiveToolFsWorkspaceOnly } from "../../tool-fs-policy.js";
-import { derivePromptTokens, type NormalizedUsage } from "../../usage.js";
+import type { NormalizedUsage } from "../../usage.js";
 import { buildActiveVideoGenerationTaskPromptContextForSession } from "../../video-generation-task-status.js";
 import { buildEmbeddedCompactionRuntimeContext } from "../compaction-runtime-context.js";
 import { resolveContextEngineCapabilities } from "../context-engine-capabilities.js";
@@ -687,8 +687,7 @@ export function buildAfterTurnRuntimeContextFromUsage(
     lastCallUsage?: NormalizedUsage;
   },
 ): ContextEngineRuntimeContext {
-  return buildAfterTurnRuntimeContext({
-    ...params,
-    currentTokenCount: derivePromptTokens(params.lastCallUsage),
-  });
+  // Provider usage stays in promptCache telemetry; it is not the current
+  // assembled prompt size after context-engine and runtime additions.
+  return buildAfterTurnRuntimeContext(params);
 }

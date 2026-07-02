@@ -3444,7 +3444,7 @@ describe("buildAfterTurnRuntimeContext", () => {
     expect(legacy.promptCache?.lastCallUsage?.total).toBe(57);
   });
 
-  it("derives afterTurn token count from the current assistant usage snapshot", () => {
+  it("keeps provider prompt usage telemetry out of afterTurn currentTokenCount", () => {
     const lastCallUsage = {
       input: 10,
       output: 5,
@@ -3476,7 +3476,7 @@ describe("buildAfterTurnRuntimeContext", () => {
       promptCache,
     });
 
-    expect(legacy.currentTokenCount).toBe(52);
+    expect(legacy.currentTokenCount).toBeUndefined();
     expect(legacy.promptCache?.lastCallUsage?.total).toBe(57);
   });
 
