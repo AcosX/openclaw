@@ -75,9 +75,16 @@ import {
   type SessionFreshness,
 } from "../../config/sessions.js";
 import { hasProviderOwnedSession } from "../../config/sessions/entry-freshness.js";
-import { patchSessionEntryTarget } from "../../config/sessions/session-accessor.js";
-import { formatSqliteSessionFileMarker } from "../../config/sessions/sqlite-marker.js";
+import {
+  patchSessionEntryTarget,
+  readTranscriptStatsSync,
+} from "../../config/sessions/session-accessor.js";
+import {
+  formatSqliteSessionFileMarker,
+  parseSqliteSessionFileMarker,
+} from "../../config/sessions/sqlite-marker.js";
 import { resolveMaintenanceConfigFromInput } from "../../config/sessions/store-maintenance.js";
+import { isRecoverableTerminalSessionStatus } from "../../config/sessions/terminal-status.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import {
   assertAgentRunLifecycleGenerationCurrent,
@@ -179,10 +186,6 @@ import type {
 } from "./types.js";
 
 const RESET_COMMAND_RE = /^\/(new|reset)(?:\s+([\s\S]*))?$/i;
-
-function isRecoverableTerminalSessionStatus(status: SessionEntry["status"] | undefined): boolean {
-  return status === "failed" || status === "timeout" || status === "killed";
-}
 
 type AgentSendSessionLifecycleTransition = {
   cfg: OpenClawConfig;
@@ -1942,6 +1945,24 @@ export const agentHandlers: GatewayRequestHandlers = {
           if (candidateEntry?.status !== "failed" || !candidateEntry.sessionId?.trim()) {
             return false;
           }
+          const sqliteMarker = parseSqliteSessionFileMarker(candidateEntry.sessionFile);
+          if (sqliteMarker) {
+            if (sqliteMarker.sessionId !== candidateEntry.sessionId) {
+              return true;
+            }
+            try {
+              const stats = readTranscriptStatsSync({
+                agentId: sqliteMarker.agentId,
+                sessionId: sqliteMarker.sessionId,
+                sessionKey: canonicalKey,
+                storePath: sqliteMarker.storePath,
+                sessionEntry: candidateEntry,
+              });
+              return stats.eventCount === 0;
+            } catch {
+              return true;
+            }
+          }
           try {
             const sessionPathOpts = resolveSessionFilePathOptions({
               storePath,
@@ -1986,9 +2007,13 @@ export const agentHandlers: GatewayRequestHandlers = {
               storePath,
             })
           : false;
+        const recoverableTerminalSession =
+          Boolean(entry?.sessionId) &&
+          visibleRequest &&
+          isRecoverableTerminalSessionStatus(entry?.status);
         const canReuseSession =
           Boolean(entry?.sessionId) &&
-          (freshness?.fresh ?? false) &&
+          ((freshness?.fresh ?? false) || recoverableTerminalSession) &&
           !failedSessionTranscriptMissing &&
           !terminalMainTranscriptNewerThanRegistry;
         let usableRequestedSessionId =
@@ -2143,9 +2168,13 @@ export const agentHandlers: GatewayRequestHandlers = {
                 });
           const freshFailedSessionTranscriptMissing =
             resolveFailedSessionTranscriptMissingForEntry(freshEntry);
+          const freshRecoverableTerminalSession =
+            Boolean(freshEntry?.sessionId) &&
+            visibleRequest &&
+            isRecoverableTerminalSessionStatus(freshEntry?.status);
           const freshCanReuseSession =
             Boolean(freshEntry?.sessionId) &&
-            (freshFreshness?.fresh ?? false) &&
+            ((freshFreshness?.fresh ?? false) || freshRecoverableTerminalSession) &&
             !freshFailedSessionTranscriptMissing &&
             !freshTerminalMainTranscriptNewerThanRegistry;
           const freshUsableRequestedSessionId =
@@ -2170,9 +2199,7 @@ export const agentHandlers: GatewayRequestHandlers = {
             : freshSessionId;
           const shouldClearRotatedState = freshRotatedSessionId && !freshSessionRotatedSinceLoad;
           const freshRecoverTerminalSession =
-            freshCanReuseSession &&
-            visibleRequest &&
-            isRecoverableTerminalSessionStatus(freshEntry?.status);
+            freshCanReuseSession && freshRecoverableTerminalSession;
           const shouldClearTerminalState =
             freshRecoverTerminalSession &&
             !freshSessionRotatedSinceLoad &&

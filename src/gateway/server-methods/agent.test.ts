@@ -47,6 +47,7 @@ const mocks = vi.hoisted(() => ({
   loadGatewaySessionRow: vi.fn(),
   updateSessionStore: vi.fn(),
   patchSessionEntryTarget: vi.fn(),
+  readTranscriptStatsSync: vi.fn(() => ({ eventCount: 0, maxSeq: 0, sizeBytes: 0 })),
   agentCommand: vi.fn(),
   clearAgentRunContext: vi.fn(),
   registerAgentRunContext: vi.fn(),
@@ -113,6 +114,7 @@ vi.mock("../../config/sessions/session-accessor.js", async () => {
   return {
     ...actual,
     patchSessionEntryTarget: mocks.patchSessionEntryTarget,
+    readTranscriptStatsSync: mocks.readTranscriptStatsSync,
   };
 });
 
@@ -455,6 +457,11 @@ function selectFreshestTargetFixtureEntry(
 }
 
 function resetSessionAccessorMocks() {
+  mocks.readTranscriptStatsSync.mockReset().mockReturnValue({
+    eventCount: 0,
+    maxSeq: 0,
+    sizeBytes: 0,
+  });
   mocks.patchSessionEntryTarget.mockReset().mockImplementation(
     async (
       scope: { storePath: string; target: SessionEntryTargetFixture },
@@ -1346,6 +1353,108 @@ describe("gateway agent handler", () => {
       const call = await waitForAgentCommandCall<{ sessionId?: string }>();
       expect(call.sessionId).toBe("failed-present-default-session-id");
       expect(capturedEntry?.sessionId).toBe("failed-present-default-session-id");
+      expect(capturedEntry?.status).toBeUndefined();
+      expect(capturedEntry?.startedAt).toBeUndefined();
+      expect(capturedEntry?.endedAt).toBeUndefined();
+      expect(capturedEntry?.runtimeMs).toBeUndefined();
+      expect(capturedEntry?.abortedLastRun).toBeUndefined();
+      expectSqliteSessionFileMarkerForEntry(capturedEntry);
+    });
+  });
+
+  it.each([
+    {
+      name: "default transcript",
+      sessionKey: "agent:main:telegram:group:stale-failed",
+      sessionId: "stale-failed-session-id",
+      configureTranscript: async (params: { sessionId: string; sessionsDir: string }) => {
+        await fs.writeFile(`${params.sessionsDir}/${params.sessionId}.jsonl`, "", "utf8");
+        return {};
+      },
+      expectsSqliteStats: false,
+    },
+    {
+      name: "SQLite transcript marker",
+      sessionKey: "agent:main:telegram:group:stale-failed-sqlite",
+      sessionId: "stale-failed-sqlite-session-id",
+      configureTranscript: async (params: { sessionId: string; storePath: string }) => {
+        mocks.readTranscriptStatsSync.mockReturnValue({
+          eventCount: 1,
+          maxSeq: 1,
+          sizeBytes: 32,
+        });
+        return { sessionFile: `sqlite:main:${params.sessionId}:${params.storePath}` };
+      },
+      expectsSqliteStats: true,
+    },
+  ])("recovers a stale failed session when its $name exists", async (scenario) => {
+    const now = Date.parse("2026-05-18T09:49:30.000Z");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    dateOnlyFakeClockActive = true;
+    vi.setSystemTime(now);
+
+    await withTempDir({ prefix: "openclaw-gateway-stale-failed-session-" }, async (root) => {
+      const sessionsDir = `${root}/sessions`;
+      const storePath = `${sessionsDir}/sessions.json`;
+      await fs.mkdir(sessionsDir, { recursive: true });
+      const transcriptFields = await scenario.configureTranscript({
+        sessionId: scenario.sessionId,
+        sessionsDir,
+        storePath,
+      });
+      const failedEntryWithStaleActivity = {
+        sessionId: scenario.sessionId,
+        ...transcriptFields,
+        status: "failed",
+        startedAt: now - 11 * 60_000,
+        endedAt: now - 10 * 60_000,
+        runtimeMs: 60_000,
+        abortedLastRun: true,
+        updatedAt: now - 10 * 60_000,
+        sessionStartedAt: now - 20 * 60_000,
+        lastInteractionAt: now - 10 * 60_000,
+      };
+      mocks.loadSessionEntry.mockReturnValue({
+        cfg: { session: { idleMinutes: 5 } },
+        storePath,
+        entry: failedEntryWithStaleActivity,
+        canonicalKey: scenario.sessionKey,
+      });
+      let capturedEntry: Record<string, unknown> | undefined;
+      mocks.updateSessionStore.mockImplementation(async (_path, updater) => {
+        const store: Record<string, unknown> = {
+          [scenario.sessionKey]: { ...failedEntryWithStaleActivity },
+        };
+        const result = await updater(store);
+        capturedEntry = result as Record<string, unknown>;
+        return result;
+      });
+      mocks.agentCommand.mockResolvedValue({
+        payloads: [{ text: "ok" }],
+        meta: { durationMs: 100 },
+      });
+
+      await invokeAgent({
+        message: "recover stale failed",
+        agentId: "main",
+        sessionKey: scenario.sessionKey,
+        idempotencyKey: `test-idem-${scenario.sessionId}`,
+      } as AgentParams);
+
+      const call = await waitForAgentCommandCall<{ sessionId?: string }>();
+      expect(call.sessionId).toBe(scenario.sessionId);
+      if (scenario.expectsSqliteStats) {
+        expect(mocks.readTranscriptStatsSync).toHaveBeenCalledWith({
+          agentId: "main",
+          sessionId: scenario.sessionId,
+          sessionKey: scenario.sessionKey,
+          storePath,
+          sessionEntry: failedEntryWithStaleActivity,
+        });
+      } else {
+        expect(mocks.readTranscriptStatsSync).not.toHaveBeenCalled();
+      }
+      expect(capturedEntry?.sessionId).toBe(scenario.sessionId);
       expect(capturedEntry?.status).toBeUndefined();
       expect(capturedEntry?.startedAt).toBeUndefined();
       expect(capturedEntry?.endedAt).toBeUndefined();
