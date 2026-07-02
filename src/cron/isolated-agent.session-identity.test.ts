@@ -166,6 +166,7 @@ describe("runCronIsolatedAgentTurn session identity", () => {
       const boundSessionKey = "agent:main:telegram:direct:42";
       const originalSessionFile = path.join(home, "bound-session.jsonl");
       const rotatedSessionFile = path.join(home, "bound-session-rotated.jsonl");
+      await fs.writeFile(rotatedSessionFile, "");
       const storePath = await writeSessionStoreEntries(home, {
         [boundSessionKey]: {
           sessionId: "bound-session",
@@ -200,6 +201,7 @@ describe("runCronIsolatedAgentTurn session identity", () => {
         },
         { sessionContext: { sessionKey: boundSessionKey } },
       ) as CronJob;
+      const executionSessionKey = `agent:main:cron:${currentBoundJob.id}`;
 
       const res = await runCronIsolatedAgentTurn({
         cfg: makeCfg(home, storePath),
