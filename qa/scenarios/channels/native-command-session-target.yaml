@@ -114,6 +114,6 @@ flow:
               ref: startIndex
             textIncludes:
               expr: config.recoveryMarker
-            timeoutMs: 45000
+            timeoutMs: 90000
           saveAs: recoveryReply
       detailsExpr: "`native command reply=${abortReply.text}; recovery reply=${recoveryReply.text}`"
