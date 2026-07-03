@@ -1470,7 +1470,7 @@ export async function runCronIsolatedAgentTurn(params: {
   }
   // Capture the stable run id before execution can rotate its persisted session.
   const initialSessionId = prepared.context.cronSession.sessionEntry.sessionId;
-  const ownsRunContext = prepared.context.usesDetachedRunSession;
+  const ownsRunContext = params.job.sessionTarget === "isolated";
   let runContextOwnerToken: string | undefined;
   let runLifecycleGeneration = admittedLifecycleGeneration;
   const notifyExecutionStarted = (info?: { lifecycleGeneration?: string }) => {
