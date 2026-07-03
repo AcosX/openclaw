@@ -26,14 +26,6 @@ import type { TelegramRuntime } from "./runtime.types.js";
 type DispatchReplyWithBufferedBlockDispatcherArgs = Parameters<
   TelegramBotDeps["dispatchReplyWithBufferedBlockDispatcher"]
 >[0];
-type RoomEventPromptContext = {
-  Body?: string;
-  BodyForAgent?: string;
-  MessageSid?: string;
-  MessageSidFull?: string;
-  RawBody?: string;
-  SenderName?: string;
-};
 
 const createTelegramDraftStream = vi.hoisted(() => vi.fn());
 const dispatchReplyWithBufferedBlockDispatcher = vi.hoisted(() =>
@@ -426,14 +418,6 @@ describe("dispatchTelegramMessage draft streaming", () => {
     expect(calls.length).toBeGreaterThan(0);
     const preview = calls[calls.length - 1][0] as { text?: string };
     expect(preview.text).toBe(barText);
-  }
-
-  function renderRoomEventPromptText(ctx: RoomEventPromptContext): string {
-    const body = ctx.BodyForAgent ?? ctx.Body ?? ctx.RawBody ?? "";
-    const messageId = ctx.MessageSid ?? ctx.MessageSidFull;
-    const sender = ctx.SenderName;
-    const label = [messageId ? `#${messageId}` : undefined, sender].filter(Boolean).join(" ");
-    return `[OpenClaw room event]\n\nCurrent event:\n${label ? `${label}: ` : ""}${body}`;
   }
 
   function createContext(overrides?: Partial<TelegramMessageContext>): TelegramMessageContext {
