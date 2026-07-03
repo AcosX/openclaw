@@ -12,6 +12,23 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildTelegramMessageContextForTest } from "./bot-message-context.test-harness.js";
 import type { TelegramPromptContextEntry } from "./bot-message-context.types.js";
 
+type RoomEventPromptContext = {
+  Body?: string;
+  BodyForAgent?: string;
+  MessageSid?: string;
+  MessageSidFull?: string;
+  RawBody?: string;
+  SenderName?: string;
+};
+
+function renderRoomEventPromptText(ctx: RoomEventPromptContext): string {
+  const body = ctx.BodyForAgent ?? ctx.Body ?? ctx.RawBody ?? "";
+  const messageId = ctx.MessageSid ?? ctx.MessageSidFull;
+  const sender = ctx.SenderName;
+  const label = [messageId ? `#${messageId}` : undefined, sender].filter(Boolean).join(" ");
+  return `[OpenClaw room event]\n\nCurrent event:\n${label ? `${label}: ` : ""}${body}`;
+}
+
 const telegramChatWindowContext: TelegramPromptContextEntry = {
   label: "Conversation context",
   source: "telegram",

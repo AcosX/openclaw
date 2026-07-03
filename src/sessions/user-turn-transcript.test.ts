@@ -546,7 +546,7 @@ describe("user turn transcript persistence", () => {
 
     it("notifies once after fallback user-turn persistence", async () => {
       const dir = createTempDir("openclaw-user-turn-recorder-notify-");
-      const transcriptPath = path.join(dir, "session.jsonl");
+      const target = createSqliteTranscriptTarget({ dir });
       const persistedMessages: unknown[] = [];
       const recorder = createUserTurnTranscriptRecorder({
         input: {
@@ -555,9 +555,10 @@ describe("user turn transcript persistence", () => {
           idempotencyKey: "chat-run-ambient:user",
         },
         target: {
-          transcriptPath,
-          sessionId: "session-1",
-          sessionKey: "main",
+          transcriptPath: target.transcriptPath,
+          sessionId: target.sessionId,
+          sessionKey: target.sessionKey,
+          agentId: target.agentId,
           cwd: dir,
         },
         updateMode: "none",
@@ -575,7 +576,7 @@ describe("user turn transcript persistence", () => {
           content: "#35676 Keśava: No wtf",
         }),
       ]);
-      expect(readTranscriptMessages(transcriptPath)).toEqual([
+      await expect(readTranscriptMessages(target)).resolves.toEqual([
         expect.objectContaining({
           role: "user",
           content: "#35676 Keśava: No wtf",
