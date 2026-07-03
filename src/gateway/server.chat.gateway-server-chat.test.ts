@@ -1782,17 +1782,13 @@ describe("gateway server chat", () => {
       if (!sessionStorePath) {
         throw new Error("session store path was not initialized");
       }
-      const raw = await fs.readFile(sessionStorePath, "utf-8");
-      const stored = JSON.parse(raw) as {
-        "agent:main:main"?: {
-          thinkingLevel?: string;
-        };
-        main?: {
-          thinkingLevel?: string;
-        };
-      };
-      expect(stored["agent:main:main"]?.thinkingLevel).toBeUndefined();
-      expect(stored.main?.thinkingLevel).toBeUndefined();
+      expect(
+        loadSessionEntry({
+          agentId: "main",
+          sessionKey: "agent:main:main",
+          storePath: sessionStorePath,
+        })?.thinkingLevel,
+      ).toBeUndefined();
     });
   });
 
