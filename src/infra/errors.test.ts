@@ -9,6 +9,8 @@ import {
   hasErrnoCode,
   isErrno,
   readErrorName,
+  serializeError,
+  toErrorObject,
 } from "./errors.js";
 
 function createCircularObject() {
@@ -65,9 +67,94 @@ describe("error helpers", () => {
   it.each([
     { value: 123n, expected: "123" },
     { value: false, expected: "false" },
+    { value: undefined, expected: "undefined" },
+    { value: Symbol("failure"), expected: "Symbol(failure)" },
     { value: createCircularObject(), expected: "[object Object]" },
   ])("formats error messages for case %#", ({ value, expected }) => {
     expect(formatErrorMessage(value)).toBe(expected);
+  });
+
+  it("tolerates throwing error accessors", () => {
+    const err = new Error("unused");
+    let accessorCalls = 0;
+    Object.defineProperties(err, {
+      message: {
+        configurable: true,
+        get() {
+          accessorCalls += 1;
+          throw new Error("message getter must not run");
+        },
+      },
+      cause: {
+        configurable: true,
+        get() {
+          accessorCalls += 1;
+          throw new Error("cause getter must not run");
+        },
+      },
+      code: {
+        configurable: true,
+        get() {
+          accessorCalls += 1;
+          throw new Error("code getter must not run");
+        },
+      },
+    });
+
+    expect(formatErrorMessage(err)).toBe("Error");
+    expect(extractErrorCode(err)).toBeUndefined();
+    expect(accessorCalls).toBe(0);
+  });
+
+  it("preserves native DOMException diagnostics", () => {
+    const timeoutError = new DOMException("The operation timed out", "TimeoutError");
+
+    expect(readErrorName(timeoutError)).toBe("TimeoutError");
+    expect(extractErrorCode(timeoutError)).toBe("23");
+    expect(formatErrorMessage(timeoutError)).toBe("The operation timed out");
+    expect(serializeError(timeoutError)).toMatchObject({
+      name: "TimeoutError",
+      message: "The operation timed out",
+      code: "23",
+    });
+  });
+
+  it("preserves inherited Error subclass diagnostics", () => {
+    class DependencyError extends Error {
+      override get name(): string {
+        return "DependencyError";
+      }
+
+      get code(): string {
+        return "EDEPENDENCY";
+      }
+    }
+
+    const error = new DependencyError("dependency failed");
+    expect(readErrorName(error)).toBe("DependencyError");
+    expect(extractErrorCode(error)).toBe("EDEPENDENCY");
+    expect(serializeError(error)).toMatchObject({
+      name: "DependencyError",
+      message: "dependency failed",
+      code: "EDEPENDENCY",
+    });
+  });
+
+  it("reads Error fallback accessors only when needed", () => {
+    let nameAccessorCalls = 0;
+    class LazyNameError extends Error {
+      override get name(): string {
+        nameAccessorCalls += 1;
+        return "LazyNameError";
+      }
+    }
+
+    const error = new LazyNameError("specific message");
+    expect(formatErrorMessage(error)).toBe("specific message");
+    expect(nameAccessorCalls).toBe(0);
+    Object.defineProperty(error, "stack", { configurable: true, value: "specific stack" });
+    expect(formatUncaughtError(error)).toBe("specific stack");
+    expect(nameAccessorCalls).toBe(0);
   });
 
   it("traverses .cause chain to include nested error messages", () => {
@@ -120,6 +207,87 @@ describe("error helpers", () => {
     expect(formatted).toContain("authorization:");
     expect(formatted).not.toContain(appSecret);
     expect(formatted).not.toContain(tenantToken);
+  });
+
+  it("coerces unknown values without invoking accessors", () => {
+    const errorLike = { code: "EFAIL", message: "Unicode failure: 🦞" };
+    Object.defineProperty(errorLike, "status", {
+      enumerable: true,
+      get() {
+        throw new Error("status getter must not run");
+      },
+    });
+
+    const normalized = toErrorObject(errorLike, "fallback");
+
+    expect(normalized).toBeInstanceOf(Error);
+    expect(normalized.message).toBe("Unicode failure: 🦞");
+    expect((normalized as Error & { code?: string }).code).toBe("EFAIL");
+    expect(Object.hasOwn(normalized, "status")).toBe(false);
+    expect(toErrorObject("plain failure", "fallback").message).toBe("plain failure");
+  });
+
+  it("keeps Error coercion fields well-formed", () => {
+    const normalized = toErrorObject({ message: 42, name: false, stack: null }, "fallback");
+
+    expect(normalized.message).toBe("fallback");
+    expect(normalized.name).toBe("Error");
+    expect(typeof normalized.stack).toBe("string");
+  });
+
+  it("serializes error chains without repeating cycles", () => {
+    const root = Object.assign(new Error("Unicode failure: 🦞"), { code: 429 });
+    const cause = Object.assign(new Error("upstream reset"), { code: "ECONNRESET" });
+    root.cause = cause;
+    cause.cause = root;
+
+    expect(serializeError(root)).toMatchObject({
+      name: "Error",
+      message: "Unicode failure: 🦞",
+      code: "429",
+      cause: {
+        name: "Error",
+        message: "upstream reset",
+        code: "ECONNRESET",
+      },
+    });
+    expect(serializeError(root).cause?.cause).toBeUndefined();
+
+    const primitiveCause = new Error("outer", { cause: 42 });
+    expect(serializeError(primitiveCause).cause).toMatchObject({ message: "42" });
+    expect(serializeError(primitiveCause).cause?.cause).toBeUndefined();
+
+    let causeAccessorCalls = 0;
+    const hostileCause = {};
+    Object.defineProperty(hostileCause, "message", {
+      enumerable: true,
+      get() {
+        causeAccessorCalls += 1;
+        return "hostile";
+      },
+    });
+    expect(serializeError(new Error("outer", { cause: hostileCause })).cause).toMatchObject({
+      message: "[object Object]",
+    });
+    expect(causeAccessorCalls).toBe(0);
+  });
+
+  it("serializes hostile error-like objects with normalized fields", () => {
+    const errorLike = { message: "worker failed", code: 503, name: 42 };
+    let stackAccessorCalls = 0;
+    Object.defineProperty(errorLike, "stack", {
+      get() {
+        stackAccessorCalls += 1;
+        throw new Error("stack getter must not run");
+      },
+    });
+
+    expect(serializeError(errorLike)).toEqual({
+      name: "Error",
+      message: "worker failed",
+      code: "503",
+    });
+    expect(stackAccessorCalls).toBe(0);
   });
 
   it.each([
