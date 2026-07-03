@@ -189,6 +189,8 @@ const QA_WHATSAPP_BATCHED_FINAL_MARKER_RE = /\bWHATSAPP_QA_BATCHED_FINAL_([A-Z0-
 const QA_SUBAGENT_DIRECT_FALLBACK_PROMPT_RE = /subagent direct fallback qa check/i;
 const QA_SUBAGENT_DIRECT_FALLBACK_WORKER_RE = /subagent direct fallback worker/i;
 const QA_SUBAGENT_DIRECT_FALLBACK_MARKER = "QA-SUBAGENT-DIRECT-FALLBACK-OK";
+const QA_NATIVE_STOP_DELAY_PROMPT_RE =
+  /subagent recovery worker native command target proof\.\s*wait until stopped\./i;
 const QA_IMAGE_GENERATION_PROMPT_RE =
   /image generation check|capability flip image check|\/tool\s+image_generate/i;
 const QA_REASONING_ONLY_RETRY_NEEDLE =
@@ -3133,10 +3135,7 @@ async function buildResponsesPayload(
   if (isGroupChat && isBaselineUnmentionedChannelChatter && !toolOutput) {
     return buildAssistantEvents("NO_REPLY");
   }
-  if (
-    /subagent recovery worker/i.test(prompt) &&
-    !/interrupted by a gateway reload/i.test(prompt)
-  ) {
+  if (QA_NATIVE_STOP_DELAY_PROMPT_RE.test(prompt)) {
     await sleep(60_000);
   }
   return buildAssistantEvents(buildAssistantText(input, body, scenarioState));
