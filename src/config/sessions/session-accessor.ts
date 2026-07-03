@@ -7,10 +7,7 @@ import {
 import { formatErrorMessage } from "../../infra/errors.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import { emitSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
-import type {
-  SessionTranscriptUpdate,
-  SessionTranscriptUpdateTarget,
-} from "../../sessions/transcript-events.js";
+import type { SessionTranscriptUpdate } from "../../sessions/transcript-events.js";
 import { createLazyRuntimeModule } from "../../shared/lazy-runtime.js";
 import { getRuntimeConfig } from "../io.js";
 import type { OpenClawConfig } from "../types.openclaw.js";
